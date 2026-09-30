@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { db } from '../lib/supabase'
 import { returnLoan } from './actions'
+import { Analytics } from "@vercel/analytics/next"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 export const dynamic = 'force-dynamic'
 
