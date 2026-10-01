@@ -64,7 +64,7 @@ export default function AppNav() {
         <svg className="h-4 w-4 text-teal-800" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
         </svg>
-        <span>+ Form Pinjam</span>
+        <span>Form Pinjam</span>
       </Link>
     </nav>
   )

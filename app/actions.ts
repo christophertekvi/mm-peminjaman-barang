@@ -214,4 +214,121 @@ export async function updateItemStatus(id: string, status: 'tersedia' | 'perawat
   }
 }
 
+export type UpdateItemInput = {
+  id: string
+  code: string
+  name: string
+  category: string
+  brand?: string
+  serialNumber?: string
+  condition?: string
+  status?: 'tersedia' | 'dipinjam' | 'perawatan' | 'hilang'
+  notes?: string
+}
+
+export async function updateItem(input: UpdateItemInput): Promise<{ error?: string }> {
+  try {
+    const code = input.code.trim().toUpperCase()
+    const name = input.name.trim()
+    if (!code) return { error: 'Kode barang wajib diisi' }
+    if (!name) return { error: 'Nama barang wajib diisi' }
+
+    // Check if code already exists on another item
+    const { data: existing } = await db
+      .from('items')
+      .select('id')
+      .eq('code', code)
+      .neq('id', input.id)
+      .maybeSingle()
+
+    if (existing) {
+      return { error: `Barang dengan kode "${code}" sudah digunakan barang lain.` }
+    }
+
+    // Check if item exists and current status
+    const { data: currentItem, error: fetchErr } = await db
+      .from('items')
+      .select('status')
+      .eq('id', input.id)
+      .single()
+
+    if (fetchErr || !currentItem) {
+      return { error: 'Barang tidak ditemukan.' }
+    }
+
+    // If currently borrowed, keep status as 'dipinjam' to prevent inconsistency with active loan
+    let targetStatus = input.status || currentItem.status
+    if (currentItem.status === 'dipinjam') {
+      targetStatus = 'dipinjam'
+    }
+
+    const { error } = await db
+      .from('items')
+      .update({
+        code,
+        name,
+        category: input.category || 'Umum',
+        brand: input.brand?.trim() || null,
+        serial_number: input.serialNumber?.trim() || null,
+        condition: input.condition || 'baik',
+        status: targetStatus,
+        notes: input.notes?.trim() || null,
+      })
+      .eq('id', input.id)
+
+    if (error) return { error: error.message }
+
+    revalidatePath('/barang')
+    revalidatePath('/pinjam')
+    revalidatePath('/')
+    return {}
+  } catch (err: any) {
+    return { error: err.message || 'Gagal memperbarui barang' }
+  }
+}
+
+export async function deleteItem(id: string): Promise<{ error?: string }> {
+  try {
+    // Check if item exists and status
+    const { data: item, error: fetchErr } = await db
+      .from('items')
+      .select('id, code, name, status')
+      .eq('id', id)
+      .single()
+
+    if (fetchErr || !item) {
+      return { error: 'Barang tidak ditemukan.' }
+    }
+
+    if (item.status === 'dipinjam') {
+      return { error: `Barang "${item.code} - ${item.name}" sedang dipinjam dan tidak dapat dihapus.` }
+    }
+
+    // Check if there are active loans referencing this item
+    const { data: activeLoans } = await db
+      .from('loan_items')
+      .select('loan_id, loans!inner(id, status)')
+      .eq('item_id', id)
+      .eq('loans.status', 'aktif')
+
+    if (activeLoans && activeLoans.length > 0) {
+      return { error: `Barang "${item.code}" masih tercatat dalam peminjaman aktif.` }
+    }
+
+    // Delete any completed loan_items references so foreign key constraint won't block deletion
+    await db.from('loan_items').delete().eq('item_id', id)
+
+    const { error: delErr } = await db.from('items').delete().eq('id', id)
+    if (delErr) return { error: delErr.message }
+
+    revalidatePath('/barang')
+    revalidatePath('/pinjam')
+    revalidatePath('/')
+    return {}
+  } catch (err: any) {
+    return { error: err.message || 'Gagal menghapus barang' }
+  }
+}
+
+
 
